@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Time Zone Converter</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(to bottom right, #e0f7fa, #e1bee7);
+      margin: 0;
+      padding: 40px 0 0 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      transition: background 0.4s;
+      direction: ltr;
+    }
+    body.dark {
+      background: linear-gradient(to bottom right, #1c1c1c, #333);
+      color: white;
+    }
+    h1, h2 { color: #4a148c; margin-bottom: 20px; }
+    body.dark h1, body.dark h2 { color: #fff; }
+    .card {
+      background: white;
+      padding: 30px 20px;
+      margin: 20px auto;
+      border-radius: 20px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      width: 90%;
+      max-width: 440px; /* ← change this to control size */
+      text-align: center;
+      animation: fadeIn 0.6s ease-in-out;
+      transition: background 0.4s, color 0.4s;
+    }
+    body.dark .card { background: #2c2c2c; color: white; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    select, button, input[type="datetime-local"] {
+      padding: 12px;
+      margin: 10px 0;
+      width: 100%;
+      font-size: 16px;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+      outline: none;
+      transition: 0.3s ease;
+    }
+    select:focus, button:hover, input[type="datetime-local"]:focus { border-color: #7b1fa2; }
+    button { background: #7b1fa2; color: white; cursor: pointer; font-weight: bold; }
+    button.back { background: #e0e0e0; color: #333; }
+    #ianaResult, #abbrResult { margin-top: 20px; font-size: 16px; }
+    .hidden { display: none; }
+    .theme-toggle {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      width: 28px;
+      height: 28px;
+      background: #7b1fa2;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    /* Language selector */
+    #languageSelector {
+      position: fixed;
+      bottom: 0;
+      right: 0;
+      width: 20%;
+      max-width: 300px;
+      min-width: 150px;
+      padding: 12px 15px;
+      font-size: 14px;
+      border: none;
+      border-top: 1px solid #ccc;
+      background: white;
+      color: black;
+      text-align: right;
+      z-index: 100;
+      border-top-left-radius: 15px;
+      box-shadow: -2px -2px 5px rgba(0,0,0,0.1);
+    }
+    body.dark #languageSelector {
+      background: #2c2c2c; color: white; border-color: #555; box-shadow: none;
+    }
+
+    /* --- Side Panel (global calendar + time format) --- */
+    .side-panel {
+      position: fixed;
+      top: 120px;
+      right: 20px;
+      width: 300px;
+      z-index: 900;
+    }
+    .sp-card {
+      background: #ffffff;
+      color: #333;
+      border-radius: 16px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.12);
+      padding: 16px;
+    }
+    body.dark .sp-card { background: #2c2c2c; color: #fff; box-shadow: 0 6px 16px rgba(0,0,0,0.35); }
+    .sp-card label { display: block; font-weight: 700; margin-top: 2px; margin-bottom: 8px; text-align: left; }
+    .sp-inline { display: grid; grid-template-columns: 1fr; gap: 8px; }
+    .sp-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .sp-actions button { flex: 1; font-size: 14px; padding: 10px; }
+    .sp-hint { display: block; font-size: 12px; opacity: 0.8; margin-top: 6px; text-align: left; }
+    @media (max-width: 980px) {
+      .side-panel { position: static; width: 90%; max-width: 600px; margin-top: 0; }
+    }
+  </style>
+</head>
+<body>
+  <button class="theme-toggle" onclick="toggleTheme()">🌗</button>
+
+  <!-- GLOBAL Side date/time + format selector -->
+  <aside class="side-panel" aria-label="Date and time selection panel">
+    <div class="sp-card">
+      <div class="sp-inline">
+        <div>
+          <label id="dtLabel" for="dtInput">Select Date & Time</label>
+          <input type="datetime-local" id="dtInput" />
+          <small class="sp-hint" id="dtHint">Interpreted in the selected <em>From</em> zone.</small>
+        </div>
+        <div>
+          <label id="tfLabel" for="timeFormat">Time Format</label>
+          <select id="timeFormat">
+            <option value="12" selected>12-hour</option>
+            <option value="24">24-hour</option>
+          </select>
+        </div>
+      </div>
+      <div class="sp-actions">
+        <button type="button" onclick="setNow()" id="useNowBtn">Use now</button>
+        <button type="button" onclick="clearDateTime()" id="clearBtn">Clear</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Menu -->
+  <div id="main-menu" class="card" style="max-width: 540px;">
+    <img src="zoneshift-logo.png" alt="Time Zone Logo" style="width: 100%; max-width: 220px; height: 200px;" />
+    <h1 id="mainTitle">🌍 Time Zone Converter</h1>
+    <button data-role="byIanaBtn" onclick="showPage('iana')">🌐 By Country/Region</button>
+    <button data-role="byAbbrBtn" onclick="showPage('abbr')">⏱ By Time Zone Abbreviation</button>
+  </div>
+
+  <p style="font-size: 12px; text-align: center; color: gray;">
+    <span style="cursor: pointer; text-decoration: underline; color: #7b1fa2;" onclick="toggleDisclaimer()">Disclaimer</span>
+  </p>
+
+  <div id="disclaimerText" style="display: none; font-size: 12px; text-align: center; color: gray; max-width: 700px; margin: 10px auto;">
+    <p>This time zone converter is provided “as is” for general informational purposes only. While care is taken to ensure accuracy, no guarantee is made regarding the correctness, completeness, or real-time applicability of the data (including daylight saving time or local changes).</p>
+    <p>The developer accepts no liability for any loss, damage, or inconvenience caused by reliance on the tool. Please verify time data with official sources when accuracy is critical.</p>
+  </div>
+
+  <!-- IANA Converter -->
+  <div id="iana-page" class="card hidden">
+    <h2 id="ianaTitle">🌐 Country/Region Time Zones</h2>
+    <select id="ianaFrom"></select>
+    <select id="ianaTo"></select>
+    <button data-role="convertIanaBtn" onclick="convertIana()">Convert</button>
+    <div id="ianaResult"></div>
+    <div id="ianaActions" class="hidden">
+      <button data-role="copyIanaBtn" onclick="copyResult('iana')">📋 Copy Result</button>
+      <button data-role="downloadIanaBtn" onclick="downloadResult('iana')">📥 Download as text file</button>
+    </div>
+    <button class="back" data-role="backBtn" onclick="showPage('main')">⬅️ Back to Menu</button>
+  </div>
+
+  <!-- Abbreviation Converter -->
+  <div id="abbr-page" class="card hidden">
+    <h2 id="abbrTitle">⏱ Time Zone Abbreviations</h2>
+    <select id="abbrFrom"></select>
+    <select id="abbrTo"></select>
+    <button data-role="convertAbbrBtn" onclick="convertAbbr()">Convert</button>
+    <div id="abbrResult"></div>
+    <div id="abbrActions" class="hidden">
+      <button data-role="copyAbbrBtn" onclick="copyResult('abbr')">📋 Copy Result</button>
+      <button data-role="downloadAbbrBtn" onclick="downloadResult('abbr')">📥 Download as text file</button>
+    </div>
+    <button class="back" data-role="backBtn" onclick="showPage('main')">⬅️ Back to Menu</button>
+  </div>
+
+  <!-- Language Selector -->
+  <select id="languageSelector" aria-label="Select Language" title="Select Language">
+    <option value="en" selected>English</option>
+    <option value="es">Spanish / Español</option>
+    <option value="fr">French / Français</option>
+    <option value="de">German / Deutsch</option>
+    <option value="zh">Chinese / 中文</option>
+    <option value="ar">Arabic / العربية</option>
+    <option value="hi">Hindi / हिंदी</option>
+    <option value="ur">Urdu / اردو</option>
+    <option value="ru">Russian / Русский</option>
+    <option value="pt">Portuguese / Português</option>
+    <option value="ja">Japanese / 日本語</option>
+    <option value="ko">Korean / 한국어</option>
+    <option value="sw">Swahili / Kiswahili</option>
+    <option value="af">Afrikaans</option>
+    <option value="it">Italian / Italiano</option>
+    <option value="tr">Turkish / Türkçe</option>
+  </select>
+
+  <script>
+    // --- Elements ---
+    const ianaFrom = document.getElementById('ianaFrom');
+    const ianaTo = document.getElementById('ianaTo');
+    const abbrFrom = document.getElementById('abbrFrom');
+    const abbrTo = document.getElementById('abbrTo');
+    const dtInput = document.getElementById('dtInput');
+    const timeFormatSel = document.getElementById('timeFormat');
+    const languageSelector = document.getElementById('languageSelector');
+
+    // --- Abbreviation zones (fixed-offset list) ---
+    const abbreviationZones = [
+      { code: 'GMT', name: 'Greenwich Mean Time', offset: 0, locations: 'UK, Western Africa' },
+      { code: 'UTC', name: 'Coordinated Universal Time', offset: 0, locations: 'Global' },
+      { code: 'WET', name: 'Western European Time', offset: 0, locations: 'Portugal, Canary Islands' },
+      { code: 'Z', name: 'Zulu Time', offset: 0, locations: 'Military/UTC' },
+      { code: 'IBST', name: 'International Business Standard Time', offset: 0, locations: 'Global business networks' },
+      { code: 'EGST', name: 'Eastern Greenland Summer Time', offset: 0, locations: 'Greenland (summer)' },
+      { code: 'CET', name: 'Central European Time', offset: 1, locations: 'France, Germany, Italy' },
+      { code: 'DFT', name: 'AIX Central European Time', offset: 1, locations: 'France (deprecated)' },
+      { code: 'WAT', name: 'West Africa Time', offset: 1, locations: 'Nigeria, Algeria' },
+      { code: 'BST', name: 'British Summer Time', offset: 1, locations: 'UK (summer)' },
+      { code: 'EET', name: 'Eastern European Time', offset: 2, locations: 'Greece, Romania, Egypt' },
+      { code: 'CEST', name: 'Central European Summer Time', offset: 2, locations: 'Germany, Italy (summer)' },
+      { code: 'SAST', name: 'South Africa Standard Time', offset: 2, locations: 'South Africa' },
+      { code: 'IST', name: 'Indian Standard Time', offset: 5.5, locations: 'India, Sri Lanka' },
+      { code: 'EAT', name: 'East Africa Time', offset: 3, locations: 'Kenya, Ethiopia' },
+      { code: 'MSK', name: 'Moscow Standard Time', offset: 3, locations: 'Russia (Moscow)' },
+      { code: 'AST', name: 'Arabia Standard Time', offset: 3, locations: 'Saudi Arabia, Iraq' },
+      { code: 'GST', name: 'Gulf Standard Time', offset: 4, locations: 'UAE, Oman' },
+      { code: 'MUT', name: 'Mauritius Time', offset: 4, locations: 'Mauritius' },
+      { code: 'RET', name: 'Réunion Time', offset: 4, locations: 'Réunion Island' },
+      { code: 'PKT', name: 'Pakistan Standard Time', offset: 5, locations: 'Pakistan' },
+      { code: 'YEKT', name: 'Yekaterinburg Time', offset: 5, locations: 'Russia (Yekaterinburg)' },
+      { code: 'TMT', name: 'Turkmenistan Time', offset: 5, locations: 'Turkmenistan' },
+      { code: 'BTT', name: 'Bhutan Time', offset: 6, locations: 'Bhutan' },
+      { code: 'WIB', name: 'Western Indonesian Time', offset: 7, locations: 'Indonesia (Jakarta)' },
+      { code: 'ICT', name: 'Indochina Time', offset: 7, locations: 'Thailand, Cambodia, Laos' },
+      { code: 'CST', name: 'China Standard Time', offset: 8, locations: 'China, Taiwan' },
+      { code: 'AWST', name: 'Australian Western Standard Time', offset: 8, locations: 'Australia (Western)' },
+      { code: 'HKT', name: 'Hong Kong Time', offset: 8, locations: 'Hong Kong' },
+      { code: 'SGT', name: 'Singapore Time', offset: 8, locations: 'Singapore' },
+      { code: 'JST', name: 'Japan Standard Time', offset: 9, locations: 'Japan' },
+      { code: 'KST', name: 'Korea Standard Time', offset: 9, locations: 'South Korea' },
+      { code: 'AEST', name: 'Australian Eastern Standard Time', offset: 10, locations: 'Australia (Eastern)' },
+      { code: 'CHST', name: 'Chamorro Standard Time', offset: 10, locations: 'Guam, Northern Mariana Islands' },
+      { code: 'NZST', name: 'New Zealand Standard Time', offset: 12, locations: 'New Zealand' },
+      { code: 'FJT', name: 'Fiji Time', offset: 12, locations: 'Fiji' },
+      { code: 'CVT', name: 'Cape Verde Time', offset: -1, locations: 'Cape Verde' },
+      { code: 'AZOT', name: 'Azores Standard Time', offset: -1, locations: 'Azores' },
+      { code: 'EST', name: 'Eastern Standard Time', offset: -5, locations: 'USA (East Coast), Canada' },
+      { code: 'CST-NAM', name: 'Central Standard Time', offset: -6, locations: 'USA (Central)' },
+      { code: 'MST', name: 'Mountain Standard Time', offset: -7, locations: 'USA (Mountain)' },
+      { code: 'PST', name: 'Pacific Standard Time', offset: -8, locations: 'USA (West Coast)' },
+      { code: 'AKST', name: 'Alaska Standard Time', offset: -9, locations: 'Alaska' },
+      { code: 'HST', name: 'Hawaii Standard Time', offset: -10, locations: 'Hawaii' },
+      { code: 'SST', name: 'Samoa Standard Time', offset: -11, locations: 'Samoa' },
+      { code: 'BIT', name: 'Baker Island Time', offset: -12, locations: 'Baker Island' }
+    ];
+
+    function showPage(page) {
+      document.getElementById('main-menu').classList.add('hidden');
+      document.getElementById('iana-page').classList.add('hidden');
+      document.getElementById('abbr-page').classList.add('hidden');
+      if (page === 'iana') document.getElementById('iana-page').classList.remove('hidden');
+      else if (page === 'abbr') document.getElementById('abbr-page').classList.remove('hidden');
+      else document.getElementById('main-menu').classList.remove('hidden');
+    }
+
+    function loadIanaZones() {
+      const zones = Intl.supportedValuesOf('timeZone');
+      zones.forEach(zone => {
+        ianaFrom.add(new Option(zone, zone));
+        ianaTo.add(new Option(zone, zone));
+      });
+      ianaFrom.value = '';
+      ianaTo.value = '';
+    }
+
+    function loadAbbreviations() {
+      abbreviationZones.forEach(z => {
+        abbrFrom.add(new Option(`${z.code} — ${z.name} (UTC${formatOffset(z.offset)})`, z.code));
+        abbrTo.add(new Option(`${z.code} — ${z.name} (UTC${formatOffset(z.offset)})`, z.code));
+      });
+      abbrFrom.value = '';
+      abbrTo.value = '';
+    }
+
+    function formatOffset(offset) {
+      const sign = offset >= 0 ? '+' : '-';
+      const abs = Math.abs(offset);
+      const h = Math.floor(abs);
+      const m = Math.round((abs - h) * 60);
+      return `${sign}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+
+    // --- Side panel helpers ---
+    function setNow() {
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      const val = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      dtInput.value = val;
+    }
+    function clearDateTime() { dtInput.value = ''; }
+
+    function parseInputToParts() {
+      if (!dtInput.value) return null;
+      const [d, t] = dtInput.value.split('T');
+      const [Y, M, D] = d.split('-').map(Number);
+      const [h, m] = t.split(':').map(Number);
+      return { Y, M, D, h, m };
+    }
+
+    // Compute timezone offset (in ms) for a given instant in a specific IANA time zone
+    function tzOffsetMsAt(epochMs, timeZone) {
+      const dtf = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        hour12: false,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+      const parts = dtf.formatToParts(new Date(epochMs));
+      const map = Object.fromEntries(parts.map(p => [p.type, p.value]));
+      const asUTC = Date.UTC(Number(map.year), Number(map.month) - 1, Number(map.day), Number(map.hour), Number(map.minute), Number(map.second));
+      return asUTC - epochMs; // positive east of UTC
+    }
+
+    // Build the actual instant for the selected wall time in a given IANA zone (handles DST transitions)
+    function instantFromWallTimeInZone(parts, timeZone) {
+      let t = Date.UTC(parts.Y, parts.M - 1, parts.D, parts.h, parts.m, 0, 0);
+      let o1 = tzOffsetMsAt(t, timeZone);
+      t = Date.UTC(parts.Y, parts.M - 1, parts.D, parts.h, parts.m, 0, 0) - o1;
+      const o2 = tzOffsetMsAt(t, timeZone);
+      if (o2 !== o1) {
+        t = Date.UTC(parts.Y, parts.M - 1, parts.D, parts.h, parts.m, 0, 0) - o2;
+      }
+      return new Date(t);
+    }
+
+    // For fixed-offset abbreviations
+    function instantFromWallTimeWithOffset(parts, offsetHours) {
+      const t = Date.UTC(parts.Y, parts.M - 1, parts.D, parts.h, parts.m, 0, 0) - offsetHours * 3600000;
+      return new Date(t);
+    }
+
+    function getHour12() { return timeFormatSel.value === '12'; }
+
+    function convertIana() {
+      const fromZone = ianaFrom.value;
+      const toZone = ianaTo.value;
+      if (!fromZone || !toZone) {
+        document.getElementById('ianaResult').innerText = currentTranslations[languageSelector.value].selectBothZones;
+        document.getElementById('ianaActions').classList.add('hidden');
+        return;
+      }
+      const parts = parseInputToParts();
+      const baseInstant = parts ? instantFromWallTimeInZone(parts, fromZone) : new Date();
+      const fmt = { dateStyle: 'medium', timeStyle: 'short', hour12: getHour12(), timeZone: undefined };
+      const fromTime = new Intl.DateTimeFormat('en-US', { ...fmt, timeZone: fromZone }).format(baseInstant);
+      const toTime   = new Intl.DateTimeFormat('en-US', { ...fmt, timeZone: toZone }).format(baseInstant);
+      document.getElementById('ianaResult').innerHTML = `
+        <p><strong>${fromZone}</strong>: ${fromTime}</p>
+        <p><strong>${toZone}</strong>: ${toTime}</p>
+      `;
+      document.getElementById('ianaActions').classList.remove('hidden');
+    }
+
+    function convertAbbr() {
+      const fromCode = abbrFrom.value;
+      const toCode = abbrTo.value;
+      const fromZone = abbreviationZones.find(z => z.code === fromCode);
+      const toZone = abbreviationZones.find(z => z.code === toCode);
+
+      if (!fromZone || !toZone) {
+        document.getElementById('abbrResult').innerText = currentTranslations[languageSelector.value].invalidSelection;
+        document.getElementById('abbrActions').classList.add('hidden');
+        return;
+      }
+
+      const parts = parseInputToParts();
+      const baseInstant = parts ? instantFromWallTimeWithOffset(parts, fromZone.offset) : new Date();
+
+      // Build display dates by shifting UTC using offsets
+      const asLocal = (offsetHours) => new Date(baseInstant.getTime() + offsetHours * 3600000 + baseInstant.getTimezoneOffset() * 60000);
+      const options = { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: 'numeric', hour12: getHour12() };
+      const fromTime = asLocal(fromZone.offset).toLocaleString('en-US', options);
+      const toTime = asLocal(toZone.offset).toLocaleString('en-US', options);
+
+      document.getElementById('abbrResult').innerHTML = `
+        <p><strong>${fromZone.code}</strong> (${fromZone.name}, <em>${fromZone.locations}</em>): ${fromTime}</p>
+        <p><strong>${toZone.code}</strong> (${toZone.name}, <em>${toZone.locations}</em>): ${toTime}</p>
+      `;
+      document.getElementById('abbrActions').classList.remove('hidden');
+    }
+
+    function copyResult(type) {
+      const resultEl = document.getElementById(type === 'iana' ? 'ianaResult' : 'abbrResult');
+      navigator.clipboard.writeText(resultEl.innerText)
+        .then(() => alert(currentTranslations[languageSelector.value].copied))
+        .catch(() => alert(currentTranslations[languageSelector.value].copyFailed));
+    }
+
+    function downloadResult(type) {
+      const resultEl = document.getElementById(type === 'iana' ? 'ianaResult' : 'abbrResult');
+      const text = resultEl.innerText;
+      const blob = new Blob([text], { type: 'text/plain' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `TimeZoneResult-${type}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function toggleTheme() { document.body.classList.toggle('dark'); }
+
+    function toggleDisclaimer() {
+      const el = document.getElementById('disclaimerText');
+      el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    // --- Translations ---
+    const translations = {
+      en: {
+        mainTitle: '🌍 Time Zone Converter',
+        byIanaBtn: '🌐 By Country/Region',
+        byAbbrBtn: '⏱ By Time Zone Abbreviation',
+        ianaTitle: '🌐 Country/Region Time Zones',
+        abbrTitle: '⏱ Time Zone Abbreviations',
+        convertBtn: 'Convert',
+        copyBtn: '📋 Copy Result',
+        downloadBtn: '📥 Download as text file',
+        backBtn: '⬅️ Back to Menu',
+        selectBothZones: 'Please select both time zones.',
+        invalidSelection: 'Invalid selection.',
+        copied: '✅ Copied to clipboard!',
+        copyFailed: '❌ Failed to copy.',
+        dtLabel: 'Select Date & Time',
+        dtHint: 'Interpreted in the selected From zone.',
+        tfLabel: 'Time Format',
+        useNow: 'Use now',
+        clear: 'Clear',
+        tf12: '12-hour',
+        tf24: '24-hour'
+      },
+      es: {
+        mainTitle: '🌍 Convertidor de Zona Horaria',
+        byIanaBtn: '🌐 Por País/Región',
+        byAbbrBtn: '⏱ Por Abreviatura de Zona Horaria',
+        ianaTitle: '🌐 Zonas Horarias por País/Región',
+        abbrTitle: '⏱ Abreviaturas de Zona Horaria',
+        convertBtn: 'Convertir',
+        copyBtn: '📋 Copiar Resultado',
+        downloadBtn: '📥 Descargar como archivo de texto',
+        backBtn: '⬅️ Volver al Menú',
+        selectBothZones: 'Por favor, seleccione ambas zonas horarias.',
+        invalidSelection: 'Selección inválida.',
+        copied: '✅ ¡Copiado al portapapeles!',
+        copyFailed: '❌ Error al copiar.',
+        dtLabel: 'Seleccionar fecha y hora',
+        dtHint: 'Interpretado en la zona "Desde" seleccionada.',
+        tfLabel: 'Formato de hora',
+        useNow: 'Usar ahora',
+        clear: 'Limpiar',
+        tf12: '12 horas',
+        tf24: '24 horas'
+      },
+      fr: {
+        mainTitle: '🌍 Convertisseur de Fuseau Horaire',
+        byIanaBtn: '🌐 Par Pays/Région',
+        byAbbrBtn: '⏱ Par Abréviation de Fuseau Horaire',
+        ianaTitle: '🌐 Fuseaux Horaires par Pays/Région',
+        abbrTitle: '⏱ Abréviations de Fuseau Horaire',
+        convertBtn: 'Convertir',
+        copyBtn: '📋 Copier le Résultat',
+        downloadBtn: '📥 Télécharger comme fichier texte',
+        backBtn: '⬅️ Retour au Menu',
+        selectBothZones: 'Veuillez sélectionner les deux fuseaux horaires.',
+        invalidSelection: 'Sélection invalide.',
+        copied: '✅ Copié dans le presse-papiers !',
+        copyFailed: '❌ Échec de la copie.',
+        dtLabel: 'Sélectionner la date et l\'heure',
+        dtHint: 'Interprété dans le fuseau horaire De sélectionné.',
+        tfLabel: 'Format de l\'heure',
+        useNow: "Maintenant",
+        clear: 'Effacer',
+        tf12: '12 heures',
+        tf24: '24 heures'
+      },
+      de: {
+        mainTitle: '🌍 Zeitzonen-Konverter',
+        byIanaBtn: '🌐 Nach Land/Region',
+        byAbbrBtn: '⏱ Nach Zeitzonenabkürzung',
+        ianaTitle: '🌐 Zeitzonen nach Land/Region',
+        abbrTitle: '⏱ Zeitzonenabkürzungen',
+        convertBtn: 'Konvertieren',
+        copyBtn: '📋 Ergebnis kopieren',
+        downloadBtn: '📥 Als Textdatei herunterladen',
+        backBtn: '⬅️ Zurück zum Menü',
+        selectBothZones: 'Bitte wählen Sie beide Zeitzonen aus.',
+        invalidSelection: 'Ungültige Auswahl.',
+        copied: '✅ In die Zwischenablage kopiert!',
+        copyFailed: '❌ Kopieren fehlgeschlagen.',
+        dtLabel: 'Datum & Uhrzeit auswählen',
+        dtHint: 'Interpretation in der ausgewählten Von-Zeitzone.',
+        tfLabel: 'Zeitformat',
+        useNow: 'Jetzt',
+        clear: 'Löschen',
+        tf12: '12-Stunden',
+        tf24: '24-Stunden'
+      },
+      zh: {
+        mainTitle: '🌍 时区转换器',
+        byIanaBtn: '🌐 按国家/地区',
+        byAbbrBtn: '⏱ 按时区缩写',
+        ianaTitle: '🌐 国家/地区时区',
+        abbrTitle: '⏱ 时区缩写',
+        convertBtn: '转换',
+        copyBtn: '📋 复制结果',
+        downloadBtn: '📥 下载为文本文件',
+        backBtn: '⬅️ 返回菜单',
+        selectBothZones: '请选择两个时区。',
+        invalidSelection: '选择无效。',
+        copied: '✅ 已复制到剪贴板！',
+        copyFailed: '❌ 复制失败。',
+        dtLabel: '选择日期和时间',
+        dtHint: '按所选“起始”时区解释。',
+        tfLabel: '时间格式',
+        useNow: '现在',
+        clear: '清除',
+        tf12: '12 小时制',
+        tf24: '24 小时制'
+      },
+      ar: {
+        mainTitle: '🌍 محول المناطق الزمنية',
+        byIanaBtn: '🌐 حسب البلد/المنطقة',
+        byAbbrBtn: '⏱ حسب اختصار المنطقة الزمنية',
+        ianaTitle: '🌐 المناطق الزمنية حسب البلد/المنطقة',
+        abbrTitle: '⏱ اختصارات المناطق الزمنية',
+        convertBtn: 'تحويل',
+        copyBtn: '📋 نسخ النتيجة',
+        downloadBtn: '📥 تحميل كملف نصي',
+        backBtn: '⬅️ العودة إلى القائمة',
+        selectBothZones: 'يرجى اختيار كلا المنطقتين الزمنيتين.',
+        invalidSelection: 'اختيار غير صالح.',
+        copied: '✅ تم النسخ إلى الحافظة!',
+        copyFailed: '❌ فشل النسخ.',
+        dtLabel: 'اختر التاريخ والوقت',
+        dtHint: 'يتم تفسيره في منطقة \"من\" المختارة.',
+        tfLabel: 'تنسيق الوقت',
+        useNow: 'الآن',
+        clear: 'مسح',
+        tf12: '12 ساعة',
+        tf24: '24 ساعة'
+      },
+      hi: {
+        mainTitle: '🌍 टाइम ज़ोन कनवर्टर',
+        byIanaBtn: '🌐 देश/क्षेत्र के अनुसार',
+        byAbbrBtn: '⏱ टाइम ज़ोन संक्षेप में',
+        ianaTitle: '🌐 देश/क्षेत्र टाइम ज़ोन',
+        abbrTitle: '⏱ टाइम ज़ोन संक्षेप',
+        convertBtn: 'परिवर्तित करें',
+        copyBtn: '📋 परिणाम कॉपी करें',
+        downloadBtn: '📥 टेक्स्ट फ़ाइल डाउनलोड करें',
+        backBtn: '⬅️ मेनू पर वापस जाएँ',
+        selectBothZones: 'कृपया दोनों टाइम ज़ोन चुनें।',
+        invalidSelection: 'अमान्य चयन।',
+        copied: '✅ क्लिपबोर्ड पर कॉपी किया गया!',
+        copyFailed: '❌ कॉपी विफल।',
+        dtLabel: 'तारीख और समय चुनें',
+        dtHint: 'चयनित From ज़ोन में व्याख्या की जाएगी।',
+        tfLabel: 'समय प्रारूप',
+        useNow: 'अभी',
+        clear: 'क्लियर',
+        tf12: '12-घंटे',
+        tf24: '24-घंटे'
+      },
+      ur: {
+        mainTitle: '🌍 ٹائم زون کنورٹر',
+        byIanaBtn: '🌐 ملک/علاقہ کے حساب سے',
+        byAbbrBtn: '⏱ ٹائم زون مخفف سے',
+        ianaTitle: '🌐 ملک/علاقہ کے ٹائم زون',
+        abbrTitle: '⏱ ٹائم زون مخففات',
+        convertBtn: 'تبدیل کریں',
+        copyBtn: '📋 نتیجہ نقل کریں',
+        downloadBtn: '📥 ٹیکسٹ فائل ڈاؤن لوڈ کریں',
+        backBtn: '⬅️ مینو پر واپس جائیں',
+        selectBothZones: 'براہ کرم دونوں ٹائم زون منتخب کریں۔',
+        invalidSelection: 'غلط انتخاب۔',
+        copied: '✅ کلپ بورڈ پر کاپی ہو گیا!',
+        copyFailed: '❌ کاپی ناکام۔',
+        dtLabel: 'تاریخ اور وقت منتخب کریں',
+        dtHint: 'منتخب کردہ From زون میں سمجھا جائے گا۔',
+        tfLabel: 'ٹائم فارمیٹ',
+        useNow: 'ابھی',
+        clear: 'صاف کریں',
+        tf12: '12-گھنٹے',
+        tf24: '24-گھنٹے'
+      },
+      ru: {
+        mainTitle: '🌍 Конвертер часовых поясов',
+        byIanaBtn: '🌐 По стране/региону',
+        byAbbrBtn: '⏱ По аббревиатуре',
+        ianaTitle: '🌐 Часовые пояса по стране/региону',
+        abbrTitle: '⏱ Аббревиатуры часовых поясов',
+        convertBtn: 'Преобразовать',
+        copyBtn: '📋 Копировать результат',
+        downloadBtn: '📥 Скачать как текстовый файл',
+        backBtn: '⬅️ Назад в меню',
+        selectBothZones: 'Пожалуйста, выберите оба часовых пояса.',
+        invalidSelection: 'Недопустимый выбор.',
+        copied: '✅ Скопировано в буфер обмена!',
+        copyFailed: '❌ Не удалось скопировать.',
+        dtLabel: 'Выберите дату и время',
+        dtHint: 'Интерпретируется в выбранной зоне From.',
+        tfLabel: 'Формат времени',
+        useNow: 'Сейчас',
+        clear: 'Очистить',
+        tf12: '12 часов',
+        tf24: '24 часа'
+      },
+      pt: {
+        mainTitle: '🌍 Conversor de Fuso Horário',
+        byIanaBtn: '🌐 Por País/Região',
+        byAbbrBtn: '⏱ Por Abreviação de Fuso',
+        ianaTitle: '🌐 Fusos por País/Região',
+        abbrTitle: '⏱ Abreviações de Fuso Horário',
+        convertBtn: 'Converter',
+        copyBtn: '📋 Copiar Resultado',
+        downloadBtn: '📥 Baixar como texto',
+        backBtn: '⬅️ Voltar ao Menu',
+        selectBothZones: 'Selecione ambos os fusos.',
+        invalidSelection: 'Seleção inválida.',
+        copied: '✅ Copiado para a área de transferência!',
+        copyFailed: '❌ Falha ao copiar.',
+        dtLabel: 'Selecionar data e hora',
+        dtHint: 'Interpretado no fuso "De" selecionado.',
+        tfLabel: 'Formato de hora',
+        useNow: 'Agora',
+        clear: 'Limpar',
+        tf12: '12 horas',
+        tf24: '24 horas'
+      },
+      ja: {
+        mainTitle: '🌍 タイムゾーンコンバーター',
+        byIanaBtn: '🌐 国/地域で選択',
+        byAbbrBtn: '⏱ 略称で選択',
+        ianaTitle: '🌐 国/地域のタイムゾーン',
+        abbrTitle: '⏱ タイムゾーン略称',
+        convertBtn: '変換',
+        copyBtn: '📋 結果をコピー',
+        downloadBtn: '📥 テキストとしてダウンロード',
+        backBtn: '⬅️ メニューへ',
+        selectBothZones: '両方のタイムゾーンを選択してください。',
+        invalidSelection: '無効な選択です。',
+        copied: '✅ クリップボードにコピーしました！',
+        copyFailed: '❌ コピーに失敗しました。',
+        dtLabel: '日付と時刻を選択',
+        dtHint: '選択したFromゾーンで解釈されます。',
+        tfLabel: '時刻表示',
+        useNow: '今',
+        clear: 'クリア',
+        tf12: '12時間',
+        tf24: '24時間'
+      },
+      ko: {
+        mainTitle: '🌍 시간대 변환기',
+        byIanaBtn: '🌐 국가/지역별',
+        byAbbrBtn: '⏱ 약어별',
+        ianaTitle: '🌐 국가/지역 시간대',
+        abbrTitle: '⏱ 시간대 약어',
+        convertBtn: '변환',
+        copyBtn: '📋 결과 복사',
+        downloadBtn: '📥 텍스트로 다운로드',
+        backBtn: '⬅️ 메뉴로 돌아가기',
+        selectBothZones: '두 시간대를 모두 선택하세요.',
+        invalidSelection: '잘못된 선택입니다.',
+        copied: '✅ 클립보드에 복사됨!',
+        copyFailed: '❌ 복사 실패.',
+        dtLabel: '날짜 및 시간 선택',
+        dtHint: '선택한 From 영역에서 해석됩니다.',
+        tfLabel: '시간 형식',
+        useNow: '지금',
+        clear: '지우기',
+        tf12: '12시간',
+        tf24: '24시간'
+      },
+      sw: {
+        mainTitle: '🌍 Kipindu cha Muda',
+        byIanaBtn: '🌐 Kwa Nchi/Mkoa',
+        byAbbrBtn: '⏱ Kwa Kifupi cha Kipindi',
+        ianaTitle: '🌐 Mipaka ya Muda kwa Nchi/Mkoa',
+        abbrTitle: '⏱ Vifupi vya Kipindi cha Muda',
+        convertBtn: 'Badilisha',
+        copyBtn: '📋 Nakili Matokeo',
+        downloadBtn: '📥 Pakua kama maandishi',
+        backBtn: '⬅️ Rudi kwenye Menyu',
+        selectBothZones: 'Tafadhali chagua mipaka yote ya muda.',
+        invalidSelection: 'Uchaguzi batili.',
+        copied: '✅ Imenakiliwa kwenye clipboard!',
+        copyFailed: '❌ Imeshindwa kunakili.',
+        dtLabel: 'Chagua Tarehe na Saa',
+        dtHint: 'Hutafsiriwa katika eneo la "Kutoka" lililochaguliwa.',
+        tfLabel: 'Muundo wa Saa',
+        useNow: 'Sasa',
+        clear: 'Futa',
+        tf12: 'Saa 12',
+        tf24: 'Saa 24'
+      },
+      af: {
+        mainTitle: '🌍 Tydsone Omskakelaar',
+        byIanaBtn: '🌐 Volgens Land/Streek',
+        byAbbrBtn: '⏱ Volgens Afkorting',
+        ianaTitle: '🌐 Tydsones volgens Land/Streek',
+        abbrTitle: '⏱ Tydsone Afkortings',
+        convertBtn: 'Skakel om',
+        copyBtn: '📋 Kopieer Resultaat',
+        downloadBtn: '📥 Laai as teks af',
+        backBtn: '⬅️ Terug na Spyskaart',
+        selectBothZones: 'Kies asseblief albei tydsones.',
+        invalidSelection: 'Ongeldige seleksie.',
+        copied: '✅ Gekopieer na knipbord!',
+        copyFailed: '❌ Kon nie kopieer nie.',
+        dtLabel: 'Kies Datum & Tyd',
+        dtHint: 'Geïnterpreteer in die geselekteerde Van-sone.',
+        tfLabel: 'Tydformaat',
+        useNow: 'Nou',
+        clear: 'Vee skoon',
+        tf12: '12-uur',
+        tf24: '24-uur'
+      },
+      it: {
+        mainTitle: '🌍 Convertitore di Fuso Orario',
+        byIanaBtn: '🌐 Per Paese/Regione',
+        byAbbrBtn: '⏱ Per Abbreviazione',
+        ianaTitle: '🌐 Fusi Orari per Paese/Regione',
+        abbrTitle: '⏱ Abbreviazioni Fuso Orario',
+        convertBtn: 'Converti',
+        copyBtn: '📋 Copia Risultato',
+        downloadBtn: '📥 Scarica come testo',
+        backBtn: '⬅️ Torna al Menu',
+        selectBothZones: 'Seleziona entrambi i fusi orari.',
+        invalidSelection: 'Selezione non valida.',
+        copied: '✅ Copiato negli appunti!',
+        copyFailed: '❌ Copia non riuscita.',
+        dtLabel: 'Seleziona data e ora',
+        dtHint: 'Interpretato nel fuso orario "Da" selezionato.',
+        tfLabel: 'Formato orario',
+        useNow: 'Ora',
+        clear: 'Pulisci',
+        tf12: '12 ore',
+        tf24: '24 ore'
+      },
+      tr: {
+        mainTitle: '🌍 Saat Dilimi Dönüştürücü',
+        byIanaBtn: '🌐 Ülke/Bölgeye Göre',
+        byAbbrBtn: '⏱ Kısaltmaya Göre',
+        ianaTitle: '🌐 Ülke/Bölge Saat Dilimleri',
+        abbrTitle: '⏱ Saat Dilimi Kısaltmaları',
+        convertBtn: 'Dönüştür',
+        copyBtn: '📋 Sonucu Kopyala',
+        downloadBtn: '📥 Metin olarak indir',
+        backBtn: '⬅️ Menüye Dön',
+        selectBothZones: 'Lütfen her iki saat dilimini seçin.',
+        invalidSelection: 'Geçersiz seçim.',
+        copied: '✅ Panoya kopyalandı!',
+        copyFailed: '❌ Kopyalama başarısız.',
+        dtLabel: 'Tarih ve Saat Seçin',
+        dtHint: 'Seçilen "Kimden" bölgesinde yorumlanır.',
+        tfLabel: 'Saat Biçimi',
+        useNow: 'Şimdi',
+        clear: 'Temizle',
+        tf12: '12 saat',
+        tf24: '24 saat'
+      }
+    };
+
+    let currentTranslations = translations.en;
+
+    languageSelector.addEventListener('change', () => {
+      const lang = languageSelector.value;
+      currentTranslations = translations[lang] || translations.en;
+      applyTranslations(lang);
+    });
+
+    function applyTranslations(lang) {
+      const t = translations[lang] || translations.en;
+      document.querySelector('#mainTitle').textContent = t.mainTitle;
+      document.querySelector('#ianaTitle').textContent = t.ianaTitle;
+      document.querySelector('#abbrTitle').textContent = t.abbrTitle;
+
+      // Buttons by role
+      document.querySelectorAll('button[data-role]').forEach(btn => {
+        const role = btn.getAttribute('data-role');
+        switch (role) {
+          case 'byIanaBtn': btn.textContent = t.byIanaBtn; break;
+          case 'byAbbrBtn': btn.textContent = t.byAbbrBtn; break;
+          case 'convertIanaBtn':
+          case 'convertAbbrBtn': btn.textContent = t.convertBtn; break;
+          case 'copyIanaBtn':
+          case 'copyAbbrBtn': btn.textContent = t.copyBtn; break;
+          case 'downloadIanaBtn':
+          case 'downloadAbbrBtn': btn.textContent = t.downloadBtn; break;
+          case 'backBtn': btn.textContent = t.backBtn; break;
+        }
+      });
+
+      // Side panel labels and options
+      document.getElementById('dtLabel').textContent = t.dtLabel;
+      document.getElementById('dtHint').textContent = t.dtHint;
+      document.getElementById('tfLabel').textContent = t.tfLabel;
+      document.getElementById('useNowBtn').textContent = t.useNow;
+      document.getElementById('clearBtn').textContent = t.clear;
+      timeFormatSel.options[0].textContent = t.tf12;
+      timeFormatSel.options[1].textContent = t.tf24;
+
+      // RTL handling
+      if (['ur','ar'].includes(lang)) document.body.style.direction = 'rtl';
+      else document.body.style.direction = 'ltr';
+
+      // Re-render messages if they are currently showing errors
+      const ianaResult = document.getElementById('ianaResult');
+      const abbrResult = document.getElementById('abbrResult');
+      if (ianaResult.textContent === translations.en.selectBothZones || ianaResult.textContent === currentTranslations.selectBothZones) {
+        ianaResult.textContent = t.selectBothZones;
+      }
+      if (abbrResult.textContent === translations.en.invalidSelection || abbrResult.textContent === currentTranslations.invalidSelection) {
+        abbrResult.textContent = t.invalidSelection;
+      }
+    }
+
+    // Init
+    loadIanaZones();
+    loadAbbreviations();
+    applyTranslations('en');
+  </script>
+</body>
+</html>
